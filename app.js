@@ -119,6 +119,7 @@ function updateGoogleStatusUI() {
 }
 
 async function handleUnlockSubmit(hasVault) {
+  hasVault = CryptoEngine.hasExistingVault();
   const pw = els.masterPasswordInput.value;
   els.unlockError.hidden = true;
   if (!pw || pw.length < 6) {
@@ -373,7 +374,7 @@ function renderDirectory() {
       <div class="card-tags">${(c.tags || []).slice(0, 4).map((t) => `<span class="card-tag">${escapeHtml(t)}</span>`).join('')}</div>
       <div class="card-bottom">
         <span class="last-contact-badge ${badgeClass}">${formatLastContacted(c)}</span>
-        <button class="btn btn-secondary log-btn" data-log-id="${c.id}">Log interaction</button>
+        <button type="button" class="btn btn-secondary log-btn" data-log-id="${c.id}">Log interaction</button>
       </div>
     `;
     card.addEventListener('click', (e) => {
@@ -419,9 +420,9 @@ function openContactModal(id) {
   state.pendingPfpBase64 = contact?.pfpBase64 || null;
   updatePfpPreview(contact?.fullName || '');
 
-  state.handleRowsDraft = contact ? contact.contactMethods.map((h) => ({ ...h })) : [];
-  state.relationRowsDraft = contact ? contact.relationships.map((r) => ({ ...r })) : [];
-  state.interactionsDraft = contact ? contact.interactions.map((i) => ({ ...i })) : [];
+  state.handleRowsDraft = contact ? (contact.contactMethods || []).map((h) => ({ ...h })) : [];
+  state.relationRowsDraft = contact ? (contact.relationships || []).map((r) => ({ ...r })) : [];
+  state.interactionsDraft = contact ? (contact.interactions || []).map((i) => ({ ...i })) : [];
 
   renderHandleRows();
   renderRelationRows();
@@ -614,6 +615,7 @@ async function saveQuickInteraction() {
   const channel = els.quickChannelInput.value.trim() || 'Touchpoint';
   const summary = els.quickSummaryInput.value.trim();
   const now = Date.now();
+  contact.interactions = contact.interactions || [];
   contact.interactions.push({ id: uuid(), date: now, channel, summary });
   contact.lastContactedAt = now;
   contact.updatedAt = now;
@@ -699,8 +701,8 @@ function renderImportQueue() {
     <div class="import-item">
       <span>${escapeHtml(c.fullName)} <span class="empty-sub">(${(c.contactMethods || []).length} handle${(c.contactMethods || []).length === 1 ? '' : 's'})</span></span>
       <div style="display:flex; gap:8px;">
-        <button class="btn btn-secondary btn-small" data-review="${idx}">Review</button>
-        <button class="btn btn-primary btn-small" data-accept="${idx}">Add</button>
+        <button type="button" class="btn btn-secondary btn-small" data-review="${idx}">Review</button>
+        <button type="button" class="btn btn-primary btn-small" data-accept="${idx}">Add</button>
       </div>
     </div>
   `).join('');
@@ -780,7 +782,7 @@ async function syncNow() {
     state.contacts = [...byId.values()];
     await persistAll();
 
-    const envelope = await CryptoEngine.encrypt({ contacts: state.contacts.filter((c) => !c.isDeleted || c) });
+    const envelope = await CryptoEngine.encrypt({ contacts: state.contacts.filter((c) => !c.isDeleted) });
     await GoogleDrive.uploadBackup(envelope);
 
     state.lastSyncAt = Date.now();
