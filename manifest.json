@@ -1,0 +1,19 @@
+{
+  "name": "Rolodex — Personal CRM",
+  "short_name": "Rolodex",
+  "description": "A private, encrypted, local-first personal relationship manager.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
