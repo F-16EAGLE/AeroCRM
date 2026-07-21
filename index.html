@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rolodex — Personal CRM</title>
+<meta name="description" content="A private, encrypted, local-first personal relationship manager.">
+
+<!-- Third-party, CDN-hosted, zero-backend scripts -->
+<script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+<script src="https://unpkg.com/fuse.js@6.6.2/dist/fuse.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<style>
+/* ==========================================================================
+   CSS Styles
+   ========================================================================== */
+:root{
+  --bg:#FFFFFF;
+  --text:#111111;
+  --text-muted:#6B6B6B;
+  --border:#EAEAEA;
+  --accent:#007AFF;
+  --accent-soft:#EAF3FF;
+  --amber:#B45309;
+  --amber-bg:#FFF7E6;
+  --red:#C0362C;
+  --red-bg:#FDEEEC;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  padding-top:env(safe-area-inset-top);
+}
+h1,h2,h3{font-weight:600; margin:0 0 4px;}
+p{margin:0;}
+button,input,textarea,select{font-family:inherit;}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
+}
+
+/* Buttons */
+.btn{border:1px solid var(--border); background:#fff; color:var(--text); border-radius:8px; padding:10px 16px; font-size:14px; font-weight:500; cursor:pointer; transition:background .15s, border-color .15s, transform .1s;}
+.btn:hover{border-color:#d6d6d6;}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+.btn-primary:hover{background:#0066d6;}
+.btn-secondary{background:#fff;}
+.btn-ghost{background:transparent; border-color:transparent;}
+.btn-ghost:hover{background:#F5F5F5;}
+.btn-danger{background:#fff; border-color:var(--red); color:var(--red);}
+.btn-danger:hover{background:var(--red-bg);}
+.btn-block{width:100%; margin-top:8px;}
+.btn-small{padding:6px 10px; font-size:13px;}
+.btn-icon{width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%;}
+.file-label{display:inline-flex; align-items:center; justify-content:center; cursor:pointer;}
+
+/* Inputs */
+.input{width:100%; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:14px; color:var(--text); background:#fff; margin-top:4px;}
+.input:focus{border-color:var(--accent);}
+.textarea{resize:vertical;}
+.select{border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:13px; background:#fff; color:var(--text);}
+
+/* Lock screen */
+.lock-screen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:linear-gradient(180deg,#fff, #FAFAFA);}
+.lock-card{width:100%; max-width:380px; border:1px solid var(--border); border-radius:16px; padding:32px 28px; box-shadow:var(--shadow);}
+.lock-mark{width:44px; height:44px; border-radius:10px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px; margin-bottom:16px;}
+.lock-card h1{font-size:22px;}
+.lock-sub{color:var(--text-muted); font-size:14px; margin-bottom:24px;}
+.lock-step{border-top:1px solid var(--border); padding-top:18px; margin-top:18px;}
+.lock-step:first-of-type{border-top:none; padding-top:0; margin-top:0;}
+.lock-label{font-weight:600; font-size:13px; margin-bottom:6px;}
+.lock-hint{color:var(--text-muted); font-size:12.5px; line-height:1.5; margin-bottom:12px;}
+.lock-status{font-size:12.5px; color:var(--accent); margin-top:8px; min-height:16px;}
+.lock-error{font-size:12.5px; color:var(--red); margin-top:8px;}
+
+/* App shell / header */
+.app-shell{min-height:100vh; display:flex; flex-direction:column;}
+.topbar{position:sticky; top:0; z-index:20; background:rgba(255,255,255,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--border);}
+.topbar-row{display:flex; align-items:center; gap:16px; padding:12px 20px; max-width:1200px; margin:0 auto; width:100%;}
+.brand{font-weight:700; font-size:17px; letter-spacing:-.02em; flex:0 0 auto;}
+.search-wrap{flex:1; display:flex; align-items:center; gap:10px; min-width:0;}
+.search-input{flex:1; border:1px solid var(--border); border-radius:8px; padding:9px 12px; font-size:14px; min-width:0;}
+.topbar-actions{display:flex; gap:8px; flex:0 0 auto;}
+.tabbar{display:flex; gap:4px; padding:0 20px 10px; max-width:1200px; margin:0 auto; width:100%; overflow-x:auto;}
+.tab{border:none; background:transparent; padding:7px 12px; border-radius:20px; font-size:13px; font-weight:500; color:var(--text-muted); cursor:pointer; white-space:nowrap;}
+.tab.active{background:var(--accent-soft); color:var(--accent);}
+
+/* Main views */
+.main{flex:1; max-width:1200px; margin:0 auto; width:100%; padding:20px;}
+.view{display:none;}
+.view.active{display:block;}
+
+/* Filter bar */
+.filter-bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px;}
+.filter-spacer{flex:1;}
+.result-count{font-size:12.5px; color:var(--text-muted);}
+.chip{border:1px solid var(--border); background:#fff; border-radius:20px; padding:7px 14px; font-size:13px; cursor:pointer; color:var(--text-muted);}
+.chip[data-active="true"]{background:var(--amber-bg); border-color:#F2C97D; color:var(--amber); font-weight:600;}
+
+/* Contact grid / cards */
+.contact-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px;}
+.contact-card{border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer; transition:border-color .15s, box-shadow .15s; display:flex; flex-direction:column; gap:10px;}
+.contact-card:hover{border-color:#D6D6D6; box-shadow:var(--shadow);}
+.card-top{display:flex; align-items:center; gap:12px;}
+.card-pfp{width:44px; height:44px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; flex:0 0 auto; overflow:hidden;}
+.card-pfp img{width:100%; height:100%; object-fit:cover;}
+.card-name{font-weight:600; font-size:15px; line-height:1.2;}
+.card-handles{font-size:12.5px; color:var(--text-muted); margin-top:2px;}
+.card-tags{display:flex; flex-wrap:wrap; gap:6px;}
+.card-tag{font-size:11px; background:#F5F5F5; color:var(--text-muted); padding:3px 8px; border-radius:12px;}
+.card-bottom{display:flex; align-items:center; justify-content:space-between; margin-top:auto;}
+.last-contact-badge{font-size:11.5px; padding:4px 9px; border-radius:12px; background:#F5F5F5; color:var(--text-muted);}
+.last-contact-badge.overdue-amber{background:var(--amber-bg); color:var(--amber);}
+.last-contact-badge.overdue-red{background:var(--red-bg); color:var(--red);}
+.log-btn{font-size:12px; padding:6px 10px;}
+.empty-state{text-align:center; padding:80px 20px; color:var(--text-muted);}
+.empty-sub{font-size:13px; margin-top:6px;}
+
+/* Reports */
+.report-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+.report-card{border:1px solid var(--border); border-radius:var(--radius); padding:18px;}
+.report-card-wide{grid-column:1 / -1;}
+.report-hint{font-size:12.5px; color:var(--text-muted); margin:6px 0 14px;}
+.report-list{display:flex; flex-direction:column; gap:8px; margin-top:12px;}
+.report-row{display:flex; justify-content:space-between; font-size:13.5px; padding:6px 0; border-bottom:1px solid var(--border);}
+.export-row{display:flex; gap:10px; flex-wrap:wrap;}
+@media (max-width:720px){.report-grid{grid-template-columns:1fr;}}
+
+/* Import */
+.import-card{border:1px solid var(--border); border-radius:var(--radius); padding:24px; max-width:640px;}
+.drop-zone{border:1.5px dashed var(--border); border-radius:var(--radius); padding:36px; text-align:center; color:var(--text-muted); font-size:13.5px; margin:16px 0;}
+.drop-zone.drag-over{border-color:var(--accent); background:var(--accent-soft);}
+.import-queue{display:flex; flex-direction:column; gap:10px; margin-top:16px;}
+.import-item{border:1px solid var(--border); border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;}
+
+/* Modals */
+.modal-backdrop{position:fixed; inset:0; background:rgba(17,17,17,.4); display:flex; align-items:center; justify-content:center; z-index:100; padding:16px;}
+.modal{background:#fff; border-radius:14px; width:100%; max-width:480px; max-height:90vh; display:flex; flex-direction:column; box-shadow:var(--shadow);}
+.modal-large{max-width:680px;}
+.modal-small{max-width:420px;}
+.modal-header{display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border); flex:0 0 auto;}
+.modal-close{background:none; border:none; font-size:22px; line-height:1; cursor:pointer; color:var(--text-muted);}
+.modal-body{padding:20px; overflow-y:auto;}
+.modal-footer{display:flex; align-items:center; gap:10px; padding:16px 20px; border-top:1px solid var(--border); flex:0 0 auto;}
+.modal-footer-spacer{flex:1;}
+
+/* Form */
+.form-row{margin-bottom:16px;}
+.form-row label{display:block; font-size:12.5px; font-weight:600; margin-bottom:2px;}
+.label-hint{font-weight:400; color:var(--text-muted);}
+.form-row-split{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.form-row-pfp{display:flex; align-items:center; gap:16px;}
+.pfp-preview{width:64px; height:64px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:22px; overflow:hidden; flex:0 0 auto;}
+.pfp-preview img{width:100%; height:100%; object-fit:cover;}
+.row-between{display:flex; justify-content:space-between; align-items:center;}
+.dynamic-rows{display:flex; flex-direction:column; gap:8px;}
+.dynamic-row{display:flex; gap:8px; align-items:center;}
+.dynamic-row .select{flex:0 0 130px;}
+.dynamic-row .input{margin-top:0;}
+.row-remove{background:none; border:none; color:var(--text-muted); font-size:18px; cursor:pointer; flex:0 0 auto;}
+.row-remove:hover{color:var(--red);}
+.relation-add{display:flex; gap:8px; margin-top:8px;}
+.relation-add .select{flex:1;}
+.relation-add .input{flex:1; margin-top:0;}
+.interaction-list{display:flex; flex-direction:column; gap:8px;}
+.interaction-item{border:1px solid var(--border); border-radius:8px; padding:10px 12px;}
+.interaction-meta{font-size:11.5px; color:var(--text-muted); display:flex; justify-content:space-between;}
+.interaction-summary{font-size:13px; margin-top:4px;}
+
+/* Settings */
+.settings-block{padding:14px 0; border-bottom:1px solid var(--border);}
+.settings-block:last-child{border-bottom:none;}
+.settings-label{font-size:12.5px; font-weight:600; margin-bottom:6px;}
+
+/* Toast */
+.toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#111; color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; z-index:200; box-shadow:var(--shadow);}
+
+@media (max-width:640px){
+  .topbar-row{flex-wrap:wrap;}
+  .search-wrap{order:3; width:100%;}
+  .form-row-split{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOCK SCREEN ============ -->
+<div id="lockScreen" class="lock-screen">
+  <div class="lock-card">
+    <div class="lock-mark">R</div>
+    <h1>Rolodex</h1>
+    <p class="lock-sub">Your network, private by default.</p>
+
+    <div class="lock-step" id="stepGoogle">
+      <p class="lock-label">1. Connect Google Drive</p>
+      <p class="lock-hint">Used only to store your encrypted backup file in a hidden app folder. Nobody at Google, or anywhere else, can read it without your master password.</p>
+      <button type="button" id="googleSignInBtn" class="btn btn-primary btn-block">Sign in with Google</button>
+      <button type="button" id="skipGoogleBtn" class="btn btn-ghost btn-block">Continue offline (local only)</button>
+      <p id="googleStatus" class="lock-status"></p>
+    </div>
+
+    <div class="lock-step" id="stepPassword" hidden>
+      <p class="lock-label">2. Master password</p>
+      <p class="lock-hint" id="passwordHint">This unlocks your data. It never leaves your device, and it's never stored — if you lose it, your encrypted backup can't be recovered.</p>
+      <input type="password" id="masterPasswordInput" class="input" placeholder="Master password" autocomplete="current-password">
+      <input type="password" id="masterPasswordConfirm" class="input" placeholder="Confirm master password" hidden>
+      <button type="button" id="unlockBtn" class="btn btn-primary btn-block">Unlock</button>
+      <p id="unlockError" class="lock-error" hidden></p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="appShell" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">Rolodex</div>
+      <div class="search-wrap">
+        <input type="search" id="globalSearch" class="search-input" placeholder="Search names, notes, tags, handles…">
+      </div>
+      <div class="topbar-actions">
+        <button type="button" id="syncBtn" class="btn btn-icon" title="Sync now" aria-label="Sync now">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+        <button type="button" id="settingsBtn" class="btn btn-icon" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.14 12.94a7.14 7.14 0 0 0 .06-.94 7.14 7.14 0 0 0-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L1.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.14 7.14 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.32.6.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.1.46 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+        </button>
+      </div>
+    </div>
+    <nav class="tabbar">
+      <button type="button" class="tab active" data-view="directory">Directory</button>
+      <button type="button" class="tab" data-view="reports">Reports</button>
+      <button type="button" class="tab" data-view="import">Import</button>
+    </nav>
+  </header>
+
+  <main class="main">
+    <!-- DIRECTORY VIEW -->
+    <section id="view-directory" class="view active">
+      <div class="filter-bar">
+        <select id="tagFilter" class="select"><option value="">All tags</option></select>
+        <button type="button" id="overdueFilterBtn" class="chip" data-active="false">Overdue reconnects</button>
+        <select id="relationFilter" class="select"><option value="">All relationships</option></select>
+        <div class="filter-spacer"></div>
+        <span id="resultCount" class="result-count"></span>
+        <button type="button" id="addContactBtn" class="btn btn-primary">+ New contact</button>
+      </div>
+      <div id="contactGrid" class="contact-grid"></div>
+      <div id="emptyState" class="empty-state" hidden>
+        <p>No contacts yet.</p>
+        <p class="empty-sub">Add your first person, or import contacts from a .vcf file.</p>
+      </div>
+    </section>
+
+    <!-- REPORTS VIEW -->
+    <section id="view-reports" class="view">
+      <div class="report-grid">
+        <div class="report-card">
+          <h3>Overdue reconnects</h3>
+          <div id="reportOverdue" class="report-list"></div>
+        </div>
+        <div class="report-card">
+          <h3>Tag distribution</h3>
+          <div id="reportTags" class="report-list"></div>
+        </div>
+        <div class="report-card report-card-wide">
+          <h3>Export</h3>
+          <p class="report-hint">Backups leave your device only when you choose to export or sync them.</p>
+          <div class="export-row">
+            <button type="button" id="exportRawBtn" class="btn btn-secondary">Download raw JSON</button>
+            <button type="button" id="exportEncryptedBtn" class="btn btn-secondary">Download encrypted JSON</button>
+            <button type="button" id="exportCsvBtn" class="btn btn-secondary">Download CSV</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- IMPORT VIEW -->
+    <section id="view-import" class="view">
+      <div class="import-card">
+        <h3>Import from vCard (.vcf)</h3>
+        <p class="report-hint">Drop one or more .vcf files, or a single file containing multiple contacts. You'll review each one before it's saved.</p>
+        <div id="dropZone" class="drop-zone">
+          <p>Drag & drop .vcf files here</p>
+          <p class="empty-sub">or</p>
+          <label class="btn btn-secondary file-label">
+            Choose file
+            <input type="file" id="vcfInput" accept=".vcf,text/vcard" multiple hidden>
+          </label>
+        </div>
+        <div id="importQueue" class="import-queue"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ CONTACT EDIT MODAL ============ -->
+<div id="contactModal" class="modal-backdrop" hidden>
+  <div class="modal modal-large">
+    <div class="modal-header">
+      <h2 id="contactModalTitle">New contact</h2>
+      <button type="button" class="modal-close" data-close="contactModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="contactForm">
+        <input type="hidden" id="contactId">
+        <div class="form-row form-row-pfp">
+          <div class="pfp-preview" id="pfpPreview">
+            <span id="pfpInitial">?</span>
+            <img id="pfpImg" hidden>
+          </div>
+          <label class="btn btn-secondary file-label">
+            Upload photo
+            <input type="file" id="pfpInput" accept="image/*" hidden>
+          </label>
+        </div>
+        <div class="form-row">
+          <label for="fullNameInput">Full name</label>
+          <input type="text" id="fullNameInput" class="input" required placeholder="Jane Doe">
+        </div>
+        <div class="form-row form-row-split">
+          <div>
+            <label for="tagsInput">Tags <span class="label-hint">comma separated</span></label>
+            <input type="text" id="tagsInput" class="input" placeholder="Engineering, Purdue, Investor">
+          </div>
+          <div>
+            <label for="frequencyInput">Reconnect goal <span class="label-hint">days</span></label>
+            <input type="number" id="frequencyInput" class="input" min="0" placeholder="e.g. 14">
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Contact handles</label>
+          <div id="handleRows" class="dynamic-rows"></div>
+          <button type="button" id="addHandleBtn" class="btn btn-ghost btn-small">+ Add handle</button>
+        </div>
+        <div class="form-row">
+          <label>Relationships</label>
+          <div id="relationRows" class="dynamic-rows"></div>
+          <div class="relation-add">
+            <select id="relationTargetSelect" class="select"></select>
+            <input type="text" id="relationLabelInput" class="input" placeholder="e.g. Sister, Co-founder">
+            <button type="button" id="addRelationBtn" class="btn btn-ghost btn-small">+ Link</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="notesInput">Notes</label>
+          <textarea id="notesInput" class="input textarea" rows="4" placeholder="Anything worth remembering…"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="row-between">
+            <label>Interaction history</label>
+            <button type="button" id="addInteractionBtn" class="btn btn-ghost btn-small">+ Log interaction</button>
+          </div>
+          <div id="interactionList" class="interaction-list"></div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button type="button" id="deleteContactBtn" class="btn btn-danger" hidden>Delete</button>
+      <div class="modal-footer-spacer"></div>
+      <button type="button" class="btn btn-ghost" data-close="contactModal">Cancel</button>
+      <button type="button" id="saveContactBtn" class="btn btn-primary">Save contact</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ LOG INTERACTION QUICK MODAL ============ -->
+<div id="interactionModal" class="modal-backdrop" hidden>
+  <div class="modal modal-small">
+    <div class="modal-header">
+      <h2>Log interaction</h2>
+      <button type="button" class="modal-close" data-close="interactionModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="quickInteractionContactId">
+      <div class="form-row">
+        <label for="quickChannelInput">Channel</label>
+        <input type="text" id="quickChannelInput" class="input" placeholder="Coffee, Call, Discord…">
+      </div>
+      <div class="form-row">
+        <label for="quickSummaryInput">Summary</label>
+        <textarea id="quickSummaryInput" class="input textarea" rows="3" placeholder="What happened?"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-footer-spacer"></div>
+      <button type="button" class="btn btn-ghost" data-close="interactionModal">Cancel</button>
+      <button type="button" id="saveQuickInteractionBtn" class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div id="settingsModal" class="modal-backdrop" hidden>
+  <div class="modal modal-small">
+    <div class="modal-header">
+      <h2>Settings & account</h2>
+      <button type="button" class="modal-close" data-close="settingsModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-block">
+        <p class="settings-label">Google Drive</p>
+        <p id="settingsGoogleStatus" class="report-hint">Not connected.</p>
+        <button type="button" id="settingsGoogleBtn" class="btn btn-secondary btn-block">Sign in with Google</button>
+      </div>
+      <div class="settings-block">
+        <p class="settings-label">Last synced</p>
+        <p id="settingsLastSync" class="report-hint">Never.</p>
+      </div>
+      <div class="settings-block">
+        <p class="settings-label">Session</p>
+        <button type="button" id="lockNowBtn" class="btn btn-secondary btn-block">Lock now</button>
+      </div>
+      <div class="settings-block">
+        <p class="settings-label">Danger zone</p>
+        <button type="button" id="wipeLocalBtn" class="btn btn-danger btn-block">Erase local data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- ==========================================================================
+     JavaScript Logic
+     ========================================================================== -->
+<script>
+// ---------- crypto.js ----------
+const CryptoEngine = (() => {
+  const PBKDF2_ITERATIONS = 600000;
+  const SALT_STORAGE_KEY = 'rolodex_kdf_salt_v1'; 
+  const VERIFIER_STORAGE_KEY = 'rolodex_verifier_v1'; 
+  let liveKey = null; 
+
+  function bufToB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  function b64ToBuf(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function getOrCreateSalt() {
+    let saltB64 = localStorage.getItem(SALT_STORAGE_KEY);
+    if (saltB64) return b64ToBuf(saltB64);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    localStorage.setItem(SALT_STORAGE_KEY, bufToB64(salt.buffer));
+    return salt.buffer;
+  }
+
+  function hasExistingVault() { return !!localStorage.getItem(VERIFIER_STORAGE_KEY); }
+
+  async function deriveKey(password) {
+    const enc = new TextEncoder();
+    const salt = getOrCreateSalt();
+    const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+      baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    );
+    return key;
+  }
+
+  async function encryptPayload(key, plainObject) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const data = enc.encode(JSON.stringify(plainObject));
+    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+    return { v: 1, iv: bufToB64(iv.buffer), data: bufToB64(cipherBuf) };
+  }
+
+  async function decryptPayload(key, envelope) {
+    const iv = new Uint8Array(b64ToBuf(envelope.iv));
+    const cipherBuf = b64ToBuf(envelope.data);
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipherBuf);
+    const dec = new TextDecoder();
+    return JSON.parse(dec.decode(plainBuf));
+  }
+
+  async function initializeVault(password) {
+    const key = await deriveKey(password);
+    const envelope = await encryptPayload(key, { check: 'rolodex-ok' });
+    localStorage.setItem(VERIFIER_STORAGE_KEY, JSON.stringify(envelope));
+    liveKey = key;
+    return key;
+  }
+
+  async function unlockVault(password) {
+    const raw = localStorage.getItem(VERIFIER_STORAGE_KEY);
+    if (!raw) throw new Error('No vault initialized');
+    const envelope = JSON.parse(raw);
+    const key = await deriveKey(password);
+    try {
+      const result = await decryptPayload(key, envelope);
+      if (result && result.check === 'rolodex-ok') { liveKey = key; return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+
+  function getLiveKey() { return liveKey; }
+  function lock() { liveKey = null; }
+  function isUnlocked() { return !!liveKey; }
+
+  async function encrypt(plainObject) {
+    if (!liveKey) throw new Error('Vault is locked');
+    return encryptPayload(liveKey, plainObject);
+  }
+
+  async function decrypt(envelope) {
+    if (!liveKey) throw new Error('Vault is locked');
+    return decryptPayload(liveKey, envelope);
+  }
+
+  return { hasExistingVault, initializeVault, unlockVault, getLiveKey, lock, isUnlocked, encrypt, decrypt };
+})();
+
+// ---------- vcard.js ----------
+const VCardParser = (() => {
+  function unfold(text) { return text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, ''); }
+  function splitCards(text) {
+    const unfolded = unfold(text);
+    const cards = [];
+    const re = /BEGIN:VCARD([\s\S]*?)END:VCARD/gi;
+    let m;
+    while ((m = re.exec(unfolded)) !== null) cards.push(m[1]);
+    return cards;
+  }
+  function parseLine(line) {
+    const idx = line.indexOf(':');
+    if (idx === -1) return null;
+    const rawKey = line.slice(0, idx);
+    const rawValue = line.slice(idx + 1).trim();
+    const [key, ...params] = rawKey.split(';');
+    return { key: key.toUpperCase(), params, value: rawValue };
+  }
+  function decodeValue(value) {
+    return value.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+  }
+  const PLATFORM_MAP = {
+    CELL: 'phone', HOME: 'phone', WORK: 'phone', VOICE: 'phone',
+    WHATSAPP: 'whatsapp', DISCORD: 'discord', INSTAGRAM: 'instagram', SNAPCHAT: 'snapchat',
+  };
+  function parseCard(cardText) {
+    const lines = cardText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const contact = { fullName: '', contactMethods: [], tags: [], notes: '' };
+    for (const rawLine of lines) {
+      const parsed = parseLine(rawLine);
+      if (!parsed) continue;
+      const { key, params, value } = parsed;
+      const val = decodeValue(value);
+      switch (key) {
+        case 'FN': contact.fullName = val; break;
+        case 'N':
+          if (!contact.fullName) {
+            const parts = val.split(';').filter(Boolean);
+            contact.fullName = parts.reverse().join(' ').trim();
+          }
+          break;
+        case 'TEL': {
+          const typeParam = params.find((p) => p.toUpperCase().startsWith('TYPE'));
+          const type = typeParam ? typeParam.split('=')[1]?.toUpperCase() : 'CELL';
+          contact.contactMethods.push({ platform: 'phone', value: val });
+          break;
+        }
+        case 'EMAIL': contact.contactMethods.push({ platform: 'email', value: val }); break;
+        case 'NOTE': contact.notes = (contact.notes ? contact.notes + '\n' : '') + val; break;
+        case 'ORG': contact.tags.push(val.split(';')[0]); break;
+        case 'X-SOCIALPROFILE': {
+          const typeParam = params.find((p) => p.toUpperCase().startsWith('TYPE'));
+          const type = typeParam ? typeParam.split('=')[1]?.toUpperCase() : 'OTHER';
+          const platform = PLATFORM_MAP[type] || 'other';
+          contact.contactMethods.push({ platform, value: val });
+          break;
+        }
+      }
+    }
+    if (!contact.fullName) contact.fullName = 'Unnamed contact';
+    return contact;
+  }
+  function parse(text) { return splitCards(text).map(parseCard); }
+  return { parse };
+})();
+
+// ---------- gdrive.js ----------
+const GoogleDrive = (() => {
+  const GOOGLE_CLIENT_ID = '819054758887-dj9fhr71ci4e7jl8m6laf6ep4n1qabhh.apps.googleusercontent.com';
+  const SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+  const BACKUP_FILENAME = 'crm_encrypted_backup.json';
+
+  let tokenClient = null;
+  let accessToken = null;
+  let tokenExpiresAt = 0;
+  let cachedFileId = null;
+
+  function isConfigured() { return GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_'); }
+  function isSignedIn() { return !!accessToken && Date.now() < tokenExpiresAt; }
+
+  function initTokenClient() {
+    if (tokenClient || typeof google === 'undefined') return tokenClient;
+    tokenClient = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: SCOPES, callback: () => {} });
+    return tokenClient;
+  }
+
+  function signIn() {
+    return new Promise((resolve, reject) => {
+      if (!isConfigured()) return reject(new Error('Google Client ID not configured.'));
+      if (typeof google === 'undefined') return reject(new Error('Google Identity Services script not loaded.'));
+      const client = initTokenClient();
+      client.callback = (resp) => {
+        if (resp.error) return reject(new Error(resp.error));
+        accessToken = resp.access_token;
+        tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
+        resolve(accessToken);
+      };
+      client.requestAccessToken({ prompt: isSignedIn() ? '' : 'consent' });
+    });
+  }
+
+  function signOut() {
+    if (accessToken && typeof google !== 'undefined') google.accounts.oauth2.revoke(accessToken, () => {});
+    accessToken = null; tokenExpiresAt = 0; cachedFileId = null;
+  }
+
+  async function ensureToken() { if (isSignedIn()) return accessToken; return signIn(); }
+
+  async function apiFetch(url, options = {}) {
+    const token = await ensureToken();
+    const resp = await fetch(url, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`Drive API error ${resp.status}: ${text}`);
+    }
+    return resp;
+  }
+
+  async function findBackupFileId() {
+    if (cachedFileId) return cachedFileId;
+    const params = new URLSearchParams({ spaces: 'appDataFolder', q: `name='${BACKUP_FILENAME}' and trashed=false`, fields: 'files(id,name,modifiedTime)' });
+    const resp = await apiFetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+    const json = await resp.json();
+    if (json.files && json.files.length > 0) { cachedFileId = json.files[0].id; return cachedFileId; }
+    return null;
+  }
+
+  async function uploadBackup(envelopeObject) {
+    const fileId = await findBackupFileId();
+    const body = JSON.stringify(envelopeObject);
+    const metadata = { name: BACKUP_FILENAME, mimeType: 'application/json' };
+
+    if (fileId) {
+      await apiFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+      return fileId;
+    }
+
+    const boundary = 'rolodex_boundary_' + Math.random().toString(36).slice(2);
+    const multipartBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify({ ...metadata, parents: ['appDataFolder'] }) + `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` + body + `\r\n--${boundary}--`;
+
+    const resp = await apiFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipartBody,
+    });
+    const json = await resp.json();
+    cachedFileId = json.id;
+    return json.id;
+  }
+
+  async function downloadBackup() {
+    const fileId = await findBackupFileId();
+    if (!fileId) return null;
+    const resp = await apiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    return resp.json();
+  }
+
+  return { isConfigured, isSignedIn, signIn, signOut, uploadBackup, downloadBackup };
+})();
+
+// ---------- app.js ----------
+const db = new Dexie('RolodexDB');
+db.version(1).stores({ records: 'id, updatedAt' });
+
+const state = {
+  contacts: [],
+  fuse: null,
+  activeView: 'directory',
+  tagFilter: '',
+  relationFilter: '',
+  overdueOnly: false,
+  searchQuery: '',
+  pendingPfpBase64: null,
+  handleRowsDraft: [],
+  relationRowsDraft: [],
+  interactionsDraft: [],
+  lastSyncAt: null,
+};
+
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return v.toString(16);
+}));
+
+function toast(msg, ms = 2600) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.hidden = true; }, ms);
+}
+
+const els = {}; 
+function cacheEls() {
+  const ids = [
+    'lockScreen','appShell','stepGoogle','stepPassword','googleSignInBtn','skipGoogleBtn',
+    'googleStatus','masterPasswordInput','masterPasswordConfirm','unlockBtn','unlockError',
+    'passwordHint','globalSearch','syncBtn','settingsBtn','contactGrid',
+    'emptyState','tagFilter','overdueFilterBtn','relationFilter','resultCount','addContactBtn',
+    'reportOverdue','reportTags','exportRawBtn','exportEncryptedBtn','exportCsvBtn',
+    'dropZone','vcfInput','importQueue','contactModal','contactModalTitle','contactForm',
+    'contactId','pfpPreview','pfpInitial','pfpImg','pfpInput','fullNameInput','tagsInput',
+    'frequencyInput','handleRows','addHandleBtn','relationRows','relationTargetSelect',
+    'relationLabelInput','addRelationBtn','notesInput','addInteractionBtn','interactionList',
+    'deleteContactBtn','saveContactBtn','interactionModal','quickInteractionContactId',
+    'quickChannelInput','quickSummaryInput','saveQuickInteractionBtn','settingsModal',
+    'settingsGoogleStatus','settingsGoogleBtn','settingsLastSync','lockNowBtn','wipeLocalBtn',
+  ];
+  ids.forEach((id) => { els[id] = document.getElementById(id); });
+}
+
+async function initLockScreen() {
+  const hasVault = CryptoEngine.hasExistingVault();
+  els.masterPasswordConfirm.hidden = hasVault;
+  els.passwordHint.textContent = hasVault
+    ? "This unlocks your data. It never leaves your device, and it's never stored — if you lose it, your encrypted backup can't be recovered."
+    : "Choose a strong master password. It never leaves your device and is never stored anywhere — write it down somewhere safe, because it cannot be reset.";
+  els.unlockBtn.textContent = hasVault ? 'Unlock' : 'Create vault & continue';
+
+  updateGoogleStatusUI();
+
+  els.googleSignInBtn.addEventListener('click', async () => {
+    try {
+      els.googleStatus.textContent = 'Opening Google sign-in…';
+      await GoogleDrive.signIn();
+      els.googleStatus.textContent = 'Connected to Google Drive.';
+      advanceToPasswordStep();
+    } catch (e) {
+      els.googleStatus.textContent = e.message.includes('Client ID')
+        ? 'Google sign-in not configured yet. You can continue offline.'
+        : `Google sign-in failed: ${e.message}`;
+    }
+  });
+
+  els.skipGoogleBtn.addEventListener('click', () => advanceToPasswordStep());
+
+  els.unlockBtn.addEventListener('click', () => handleUnlockSubmit(hasVault));
+  els.masterPasswordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlockSubmit(hasVault); });
+  els.masterPasswordConfirm.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlockSubmit(hasVault); });
+}
+
+function advanceToPasswordStep() {
+  els.stepGoogle.hidden = true;
+  els.stepPassword.hidden = false;
+  els.masterPasswordInput.focus();
+}
+
+function updateGoogleStatusUI() {
+  const connected = GoogleDrive.isSignedIn();
+  els.googleStatus.textContent = connected ? 'Connected to Google Drive.' : '';
+}
+
+async function handleUnlockSubmit(hasVault) {
+  hasVault = CryptoEngine.hasExistingVault();
+  const pw = els.masterPasswordInput.value;
+  els.unlockError.hidden = true;
+  if (!pw || pw.length < 6) {
+    els.unlockError.textContent = 'Password must be at least 6 characters.';
+    els.unlockError.hidden = false;
+    return;
+  }
+  if (!hasVault) {
+    const confirm = els.masterPasswordConfirm.value;
+    if (pw !== confirm) {
+      els.unlockError.textContent = "Passwords don't match.";
+      els.unlockError.hidden = false;
+      return;
+    }
+    await CryptoEngine.initializeVault(pw);
+    await enterApp();
+    return;
+  }
+
+  els.unlockBtn.disabled = true;
+  els.unlockBtn.textContent = 'Unlocking…';
+  const ok = await CryptoEngine.unlockVault(pw);
+  els.unlockBtn.disabled = false;
+  els.unlockBtn.textContent = 'Unlock';
+  if (!ok) {
+    els.unlockError.textContent = 'Incorrect password.';
+    els.unlockError.hidden = false;
+    return;
+  }
+  await enterApp();
+}
+
+async function enterApp() {
+  els.masterPasswordInput.value = '';
+  els.masterPasswordConfirm.value = '';
+  await loadAllFromDb();
+  els.lockScreen.hidden = true;
+  els.appShell.hidden = false;
+  rebuildSearchIndex();
+  renderDirectory();
+  renderReports();
+  populateTagFilterOptions();
+  updateSettingsPanel();
+}
+
+function lockNow() {
+  CryptoEngine.lock();
+  state.contacts = [];
+  state.fuse = null;
+  els.appShell.hidden = true;
+  els.lockScreen.hidden = false;
+  els.stepGoogle.hidden = false;
+  els.stepPassword.hidden = true;
+  updateGoogleStatusUI();
+}
+
+async function loadAllFromDb() {
+  const rows = await db.records.toArray();
+  const decrypted = [];
+  for (const row of rows) {
+    try {
+      const contact = await CryptoEngine.decrypt(row.envelope);
+      decrypted.push(contact);
+    } catch (e) { console.error('Failed to decrypt record', row.id, e); }
+  }
+  state.contacts = decrypted;
+}
+
+async function persistContact(contact) {
+  const envelope = await CryptoEngine.encrypt(contact);
+  await db.records.put({ id: contact.id, updatedAt: contact.updatedAt, envelope });
+}
+
+async function persistAll() { for (const c of state.contacts) await persistContact(c); }
+
+function rebuildSearchIndex() {
+  const searchable = state.contacts
+    .filter((c) => !c.isDeleted)
+    .map((c) => ({
+      id: c.id, fullName: c.fullName, notes: c.notes || '', tags: (c.tags || []).join(' '),
+      handles: (c.contactMethods || []).map((h) => h.value).join(' '),
+      relationLabels: (c.relationships || []).map((r) => r.label).join(' '),
+    }));
+  state.fuse = new Fuse(searchable, { keys: ['fullName', 'notes', 'tags', 'handles', 'relationLabels'], threshold: 0.32, ignoreLocation: true });
+}
+
+function isOverdue(contact) {
+  if (!contact.frequencyGoalDays || !contact.lastContactedAt) return false;
+  const days = (Date.now() - contact.lastContactedAt) / (1000 * 60 * 60 * 24);
+  return days > contact.frequencyGoalDays;
+}
+
+function overdueLevel(contact) {
+  if (!isOverdue(contact)) return 'ok';
+  const days = (Date.now() - contact.lastContactedAt) / (1000 * 60 * 60 * 24);
+  return days > contact.frequencyGoalDays * 2 ? 'red' : 'amber';
+}
+
+function getFilteredContacts() {
+  let list = state.contacts.filter((c) => !c.isDeleted);
+  if (state.searchQuery) {
+    if (state.fuse) {
+      const ids = new Set(state.fuse.search(state.searchQuery).map((r) => r.item.id));
+      list = list.filter((c) => ids.has(c.id));
+    }
+  }
+  if (state.tagFilter) list = list.filter((c) => (c.tags || []).includes(state.tagFilter));
+  if (state.overdueOnly) list = list.filter(isOverdue);
+  if (state.relationFilter) list = list.filter((c) => (c.relationships || []).some((r) => r.targetContactId === state.relationFilter));
+  return list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+function initials(name) { return (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('') || '?'; }
+
+function formatLastContacted(contact) {
+  if (!contact.lastContactedAt) return 'Never logged';
+  const days = Math.floor((Date.now() - contact.lastContactedAt) / (1000 * 60 * 60 * 24));
+  if (days <= 0) return 'Today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
+function renderDirectory() {
+  const list = getFilteredContacts();
+  els.resultCount.textContent = `${list.length} ${list.length === 1 ? 'contact' : 'contacts'}`;
+  els.contactGrid.innerHTML = '';
+  els.emptyState.hidden = list.length > 0;
+
+  for (const c of list) {
+    const card = document.createElement('div');
+    card.className = 'contact-card';
+    card.dataset.id = c.id;
+
+    const level = overdueLevel(c);
+    const badgeClass = level === 'red' ? 'overdue-red' : level === 'amber' ? 'overdue-amber' : '';
+    const primaryHandle = (c.contactMethods || [])[0];
+
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-pfp">${c.pfpBase64 ? `<img src="${c.pfpBase64}" alt="">` : initials(c.fullName)}</div>
+        <div>
+          <div class="card-name">${escapeHtml(c.fullName)}</div>
+          <div class="card-handles">${primaryHandle ? escapeHtml(primaryHandle.value) : ''}</div>
+        </div>
+      </div>
+      <div class="card-tags">${(c.tags || []).slice(0, 4).map((t) => `<span class="card-tag">${escapeHtml(t)}</span>`).join('')}</div>
+      <div class="card-bottom">
+        <span class="last-contact-badge ${badgeClass}">${formatLastContacted(c)}</span>
+        <button type="button" class="btn btn-secondary log-btn" data-log-id="${c.id}">Log interaction</button>
+      </div>
+    `;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-log-id]')) return;
+      openContactModal(c.id);
+    });
+    card.querySelector('[data-log-id]').addEventListener('click', () => openInteractionModal(c.id));
+    els.contactGrid.appendChild(card);
+  }
+}
+
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function populateTagFilterOptions() {
+  const tags = new Set();
+  state.contacts.filter((c) => !c.isDeleted).forEach((c) => (c.tags || []).forEach((t) => tags.add(t)));
+  els.tagFilter.innerHTML = '<option value="">All tags</option>' + [...tags].sort().map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  els.tagFilter.value = state.tagFilter;
+
+  els.relationFilter.innerHTML = '<option value="">All relationships</option>' + state.contacts.filter((c) => !c.isDeleted)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.fullName)}</option>`).join('');
+  els.relationFilter.value = state.relationFilter;
+}
+
+function openContactModal(id) {
+  const isEdit = !!id;
+  const contact = isEdit ? state.contacts.find((c) => c.id === id) : null;
+  els.contactModalTitle.textContent = isEdit ? 'Edit contact' : 'New contact';
+  els.contactId.value = id || '';
+  els.fullNameInput.value = contact?.fullName || '';
+  els.tagsInput.value = (contact?.tags || []).join(', ');
+  els.frequencyInput.value = contact?.frequencyGoalDays ?? '';
+  els.notesInput.value = contact?.notes || '';
+  els.deleteContactBtn.hidden = !isEdit;
+
+  state.pendingPfpBase64 = contact?.pfpBase64 || null;
+  updatePfpPreview(contact?.fullName || '');
+
+  state.handleRowsDraft = contact ? (contact.contactMethods || []).map((h) => ({ ...h })) : [];
+  state.relationRowsDraft = contact ? (contact.relationships || []).map((r) => ({ ...r })) : [];
+  state.interactionsDraft = contact ? (contact.interactions || []).map((i) => ({ ...i })) : [];
+
+  renderHandleRows();
+  renderRelationRows();
+  renderInteractionList();
+  populateRelationTargetSelect(id);
+
+  els.contactModal.hidden = false;
+}
+
+function updatePfpPreview(name) {
+  if (state.pendingPfpBase64) {
+    els.pfpImg.src = state.pendingPfpBase64;
+    els.pfpImg.hidden = false;
+    els.pfpInitial.hidden = true;
+  } else {
+    els.pfpImg.hidden = true;
+    els.pfpInitial.hidden = false;
+    els.pfpInitial.textContent = initials(name || els.fullNameInput.value);
+  }
+}
+
+function renderHandleRows() {
+  els.handleRows.innerHTML = '';
+  state.handleRowsDraft.forEach((h, idx) => {
+    const row = document.createElement('div');
+    row.className = 'dynamic-row';
+    row.innerHTML = `
+      <select class="select" data-idx="${idx}" data-field="platform">
+        ${['phone','email','whatsapp','discord','instagram','snapchat','other'].map((p) => `<option value="${p}" ${p === h.platform ? 'selected' : ''}>${p}</option>`).join('')}
+      </select>
+      <input class="input" data-idx="${idx}" data-field="value" value="${escapeHtml(h.value)}" placeholder="Value">
+      <button type="button" class="row-remove" data-remove="${idx}" aria-label="Remove">&times;</button>
+    `;
+    els.handleRows.appendChild(row);
+  });
+  els.handleRows.querySelectorAll('select, input').forEach((el) => {
+    el.addEventListener('input', (e) => {
+      const idx = +e.target.dataset.idx, field = e.target.dataset.field;
+      state.handleRowsDraft[idx][field] = e.target.value;
+    });
+  });
+  els.handleRows.querySelectorAll('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => { state.handleRowsDraft.splice(+btn.dataset.remove, 1); renderHandleRows(); });
+  });
+}
+
+function renderRelationRows() {
+  els.relationRows.innerHTML = '';
+  state.relationRowsDraft.forEach((r, idx) => {
+    const target = state.contacts.find((c) => c.id === r.targetContactId);
+    const row = document.createElement('div');
+    row.className = 'dynamic-row';
+    row.innerHTML = `
+      <span style="flex:1; font-size:13px;">${escapeHtml(r.label)} — <strong>${escapeHtml(target?.fullName || 'Unknown')}</strong></span>
+      <button type="button" class="row-remove" data-remove="${idx}" aria-label="Remove">&times;</button>
+    `;
+    els.relationRows.appendChild(row);
+  });
+  els.relationRows.querySelectorAll('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => { state.relationRowsDraft.splice(+btn.dataset.remove, 1); renderRelationRows(); });
+  });
+}
+
+function populateRelationTargetSelect(excludeId) {
+  els.relationTargetSelect.innerHTML = state.contacts.filter((c) => !c.isDeleted && c.id !== excludeId).sort((a, b) => a.fullName.localeCompare(b.fullName)).map((c) => `<option value="${c.id}">${escapeHtml(c.fullName)}</option>`).join('');
+}
+
+function renderInteractionList() {
+  const sorted = [...state.interactionsDraft].sort((a, b) => b.date - a.date);
+  els.interactionList.innerHTML = sorted.map((i) => `
+    <div class="interaction-item">
+      <div class="interaction-meta"><span>${escapeHtml(i.channel)}</span><span>${new Date(i.date).toLocaleDateString()}</span></div>
+      <div class="interaction-summary">${escapeHtml(i.summary)}</div>
+    </div>
+  `).join('') || '<p class="empty-sub">No interactions logged yet.</p>';
+}
+
+function closeModal(id) { document.getElementById(id).hidden = true; }
+
+async function saveContactFromModal() {
+  const id = els.contactId.value || uuid();
+  const existing = state.contacts.find((c) => c.id === id);
+  const fullName = els.fullNameInput.value.trim();
+  if (!fullName) { toast('Name is required.'); return; }
+
+  const lastContactedAt = state.interactionsDraft.length
+    ? Math.max(...state.interactionsDraft.map((i) => i.date))
+    : existing?.lastContactedAt;
+
+  const contact = {
+    id, fullName, pfpBase64: state.pendingPfpBase64 || undefined,
+    frequencyGoalDays: els.frequencyInput.value ? Number(els.frequencyInput.value) : undefined,
+    lastContactedAt,
+    contactMethods: state.handleRowsDraft.filter((h) => h.value && h.value.trim()),
+    relationships: state.relationRowsDraft,
+    tags: els.tagsInput.value.split(',').map((t) => t.trim()).filter(Boolean),
+    notes: els.notesInput.value, interactions: state.interactionsDraft,
+    updatedAt: Date.now(), isDeleted: false,
+  };
+
+  const idx = state.contacts.findIndex((c) => c.id === id);
+  if (idx >= 0) state.contacts[idx] = contact; else state.contacts.push(contact);
+
+  await persistContact(contact);
+  rebuildSearchIndex();
+  populateTagFilterOptions();
+  renderDirectory();
+  renderReports();
+  closeModal('contactModal');
+  toast('Contact saved.');
+}
+
+async function deleteCurrentContact() {
+  const id = els.contactId.value;
+  if (!id) return;
+  if (!confirm('Delete this contact? This can be undone by restoring from a backup.')) return;
+  const contact = state.contacts.find((c) => c.id === id);
+  if (!contact) return;
+  contact.isDeleted = true;
+  contact.updatedAt = Date.now();
+  await persistContact(contact);
+  rebuildSearchIndex();
+  populateTagFilterOptions();
+  renderDirectory();
+  renderReports();
+  closeModal('contactModal');
+  toast('Contact deleted.');
+}
+
+function handlePfpFile(file) {
+  const img = new Image(); const reader = new FileReader();
+  reader.onload = (e) => {
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 300; canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+
+      let quality = 0.85; let dataUrl = canvas.toDataURL('image/webp', quality);
+      while (dataUrl.length * 0.75 > 30 * 1024 && quality > 0.3) {
+        quality -= 0.1; dataUrl = canvas.toDataURL('image/webp', quality);
+      }
+      state.pendingPfpBase64 = dataUrl;
+      updatePfpPreview();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function openInteractionModal(contactId) {
+  els.quickInteractionContactId.value = contactId;
+  els.quickChannelInput.value = ''; els.quickSummaryInput.value = '';
+  els.interactionModal.hidden = false;
+}
+
+async function saveQuickInteraction() {
+  const id = els.quickInteractionContactId.value;
+  const contact = state.contacts.find((c) => c.id === id);
+  if (!contact) return;
+  const channel = els.quickChannelInput.value.trim() || 'Touchpoint';
+  const summary = els.quickSummaryInput.value.trim();
+  const now = Date.now();
+  contact.interactions = contact.interactions || [];
+  contact.interactions.push({ id: uuid(), date: now, channel, summary });
+  contact.lastContactedAt = now; contact.updatedAt = now;
+  await persistContact(contact);
+  renderDirectory(); renderReports();
+  closeModal('interactionModal');
+  toast('Interaction logged.');
+}
+
+function renderReports() {
+  const active = state.contacts.filter((c) => !c.isDeleted);
+  const overdue = active.filter(isOverdue).sort((a, b) => b.lastContactedAt - a.lastContactedAt);
+  els.reportOverdue.innerHTML = overdue.length
+    ? overdue.map((c) => `<div class="report-row"><span>${escapeHtml(c.fullName)}</span><span>${formatLastContacted(c)}</span></div>`).join('')
+    : '<p class="empty-sub">Nothing overdue — nice work.</p>';
+
+  const tagCounts = {};
+  active.forEach((c) => (c.tags || []).forEach((t) => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+  const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+  els.reportTags.innerHTML = sortedTags.length
+    ? sortedTags.map(([tag, count]) => `<div class="report-row"><span>${escapeHtml(tag)}</span><span>${count}</span></div>`).join('')
+    : '<p class="empty-sub">No tags yet.</p>';
+}
+
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime }); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+function exportRawJson() {
+  const active = state.contacts.filter((c) => !c.isDeleted);
+  downloadFile('rolodex-backup-raw.json', JSON.stringify(active, null, 2), 'application/json');
+  toast('Raw backup downloaded — keep this file somewhere safe and private.');
+}
+
+async function exportEncryptedJson() {
+  const active = state.contacts.filter((c) => !c.isDeleted);
+  const envelope = await CryptoEngine.encrypt({ contacts: active });
+  downloadFile('rolodex-backup-encrypted.json', JSON.stringify(envelope), 'application/json');
+  toast('Encrypted backup downloaded.');
+}
+
+function exportCsv() {
+  const active = state.contacts.filter((c) => !c.isDeleted);
+  const headers = ['Full Name', 'Tags', 'Contact Methods', 'Last Contacted', 'Reconnect Goal (days)', 'Notes'];
+  const rows = active.map((c) => [
+    c.fullName, (c.tags || []).join('; '), (c.contactMethods || []).map((h) => `${h.platform}:${h.value}`).join('; '),
+    c.lastContactedAt ? new Date(c.lastContactedAt).toISOString() : '', c.frequencyGoalDays ?? '', (c.notes || '').replace(/\n/g, ' '),
+  ]);
+  const csv = [headers, ...rows].map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  downloadFile('rolodex-contacts.csv', csv, 'text/csv');
+  toast('CSV exported.');
+}
+
+let importQueue = [];
+async function handleVcfFiles(files) {
+  for (const file of files) {
+    const text = await file.text(); const parsed = VCardParser.parse(text);
+    importQueue.push(...parsed);
+  }
+  renderImportQueue();
+}
+
+function renderImportQueue() {
+  els.importQueue.innerHTML = importQueue.map((c, idx) => `
+    <div class="import-item">
+      <span>${escapeHtml(c.fullName)} <span class="empty-sub">(${(c.contactMethods || []).length} handle${(c.contactMethods || []).length === 1 ? '' : 's'})</span></span>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn-secondary btn-small" data-review="${idx}">Review</button>
+        <button type="button" class="btn btn-primary btn-small" data-accept="${idx}">Add</button>
+      </div>
+    </div>
+  `).join('');
+
+  els.importQueue.querySelectorAll('[data-accept]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const idx = +btn.dataset.accept;
+      await acceptImportedContact(importQueue[idx]); importQueue.splice(idx, 1); renderImportQueue();
+    });
+  });
+  els.importQueue.querySelectorAll('[data-review]').forEach((btn) => {
+    btn.addEventListener('click', () => { const idx = +btn.dataset.review; openContactModal(null); prefillModalFromParsed(importQueue[idx]); });
+  });
+}
+
+function prefillModalFromParsed(parsed) {
+  els.fullNameInput.value = parsed.fullName || '';
+  els.notesInput.value = parsed.notes || '';
+  els.tagsInput.value = (parsed.tags || []).join(', ');
+  state.handleRowsDraft = (parsed.contactMethods || []).map((h) => ({ ...h }));
+  renderHandleRows();
+}
+
+async function acceptImportedContact(parsed) {
+  const contact = {
+    id: uuid(), fullName: parsed.fullName, contactMethods: parsed.contactMethods || [], relationships: [],
+    tags: parsed.tags || [], notes: parsed.notes || '', interactions: [], updatedAt: Date.now(), isDeleted: false,
+  };
+  state.contacts.push(contact); await persistContact(contact); rebuildSearchIndex(); populateTagFilterOptions(); renderDirectory(); renderReports();
+  toast(`${contact.fullName} added.`);
+}
+
+async function syncNow() {
+  if (!GoogleDrive.isConfigured()) { toast('Google Drive is not configured yet.'); return; }
+  els.syncBtn.disabled = true;
+  try {
+    if (!GoogleDrive.isSignedIn()) await GoogleDrive.signIn();
+    toast('Syncing…');
+    const remoteEnvelope = await GoogleDrive.downloadBackup();
+    let remoteContacts = [];
+    if (remoteEnvelope) {
+      const remotePayload = await CryptoEngine.decrypt(remoteEnvelope);
+      remoteContacts = remotePayload.contacts || [];
+    }
+    const byId = new Map();
+    for (const c of state.contacts) byId.set(c.id, c);
+    for (const rc of remoteContacts) {
+      const local = byId.get(rc.id);
+      if (!local || rc.updatedAt > local.updatedAt) byId.set(rc.id, rc);
+    }
+    state.contacts = [...byId.values()];
+    await persistAll();
+    const envelope = await CryptoEngine.encrypt({ contacts: state.contacts.filter((c) => !c.isDeleted) });
+    await GoogleDrive.uploadBackup(envelope);
+    state.lastSyncAt = Date.now();
+    rebuildSearchIndex(); populateTagFilterOptions(); renderDirectory(); renderReports(); updateSettingsPanel();
+    toast('Synced with Google Drive.');
+  } catch (e) { toast(`Sync failed: ${e.message}`); } finally { els.syncBtn.disabled = false; }
+}
+
+function updateSettingsPanel() {
+  els.settingsGoogleStatus.textContent = GoogleDrive.isSignedIn() ? 'Connected.' : 'Not connected.';
+  els.settingsLastSync.textContent = state.lastSyncAt ? new Date(state.lastSyncAt).toLocaleString() : 'Never.';
+}
+
+function init() {
+  cacheEls();
+  initLockScreen();
+
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(`view-${tab.dataset.view}`).classList.add('active');
+    });
+  });
+
+  let searchDebounce;
+  els.globalSearch.addEventListener('input', (e) => {
+    state.searchQuery = e.target.value.trim();
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => { renderDirectory(); }, 200);
+  });
+
+  els.tagFilter.addEventListener('change', (e) => { state.tagFilter = e.target.value; renderDirectory(); });
+  els.relationFilter.addEventListener('change', (e) => { state.relationFilter = e.target.value; renderDirectory(); });
+  els.overdueFilterBtn.addEventListener('click', () => { state.overdueOnly = !state.overdueOnly; els.overdueFilterBtn.dataset.active = String(state.overdueOnly); renderDirectory(); });
+
+  els.addContactBtn.addEventListener('click', () => openContactModal(null));
+  els.saveContactBtn.addEventListener('click', saveContactFromModal);
+  els.deleteContactBtn.addEventListener('click', deleteCurrentContact);
+  els.pfpInput.addEventListener('change', (e) => { if (e.target.files[0]) handlePfpFile(e.target.files[0]); });
+  els.addHandleBtn.addEventListener('click', () => { state.handleRowsDraft.push({ platform: 'phone', value: '' }); renderHandleRows(); });
+  els.addRelationBtn.addEventListener('click', () => {
+    const targetId = els.relationTargetSelect.value; const label = els.relationLabelInput.value.trim();
+    if (!targetId || !label) { toast('Pick a person and a relationship label.'); return; }
+    state.relationRowsDraft.push({ targetContactId: targetId, label }); els.relationLabelInput.value = ''; renderRelationRows();
+  });
+  els.addInteractionBtn.addEventListener('click', () => {
+    const channel = prompt('Channel (e.g. Coffee, Call, Discord):'); if (channel === null) return;
+    const summary = prompt('Summary:') || '';
+    state.interactionsDraft.push({ id: uuid(), date: Date.now(), channel: channel || 'Touchpoint', summary });
+    renderInteractionList();
+  });
+
+  els.saveQuickInteractionBtn.addEventListener('click', saveQuickInteraction);
+
+  document.querySelectorAll('[data-close]').forEach((btn) => { btn.addEventListener('click', () => closeModal(btn.dataset.close)); });
+  document.querySelectorAll('.modal-backdrop').forEach((backdrop) => { backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.hidden = true; }); });
+
+  els.syncBtn.addEventListener('click', syncNow);
+  els.settingsBtn.addEventListener('click', () => { updateSettingsPanel(); els.settingsModal.hidden = false; });
+  els.settingsGoogleBtn.addEventListener('click', async () => { try { await GoogleDrive.signIn(); updateSettingsPanel(); toast('Connected to Google Drive.'); } catch (e) { toast(e.message); } });
+  els.lockNowBtn.addEventListener('click', () => { closeModal('settingsModal'); lockNow(); });
+  els.wipeLocalBtn.addEventListener('click', async () => {
+    if (!confirm('This permanently deletes all local data on this device. Continue?')) return;
+    await db.records.clear(); localStorage.removeItem('rolodex_kdf_salt_v1'); localStorage.removeItem('rolodex_verifier_v1'); location.reload();
+  });
+
+  els.exportRawBtn.addEventListener('click', exportRawJson);
+  els.exportEncryptedBtn.addEventListener('click', exportEncryptedJson);
+  els.exportCsvBtn.addEventListener('click', exportCsv);
+
+  els.vcfInput.addEventListener('change', (e) => handleVcfFiles([...e.target.files]));
+  els.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); els.dropZone.classList.add('drag-over'); });
+  els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('drag-over'));
+  els.dropZone.addEventListener('drop', (e) => {
+    e.preventDefault(); els.dropZone.classList.remove('drag-over');
+    handleVcfFiles([...e.dataTransfer.files].filter((f) => f.name.endsWith('.vcf')));
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
